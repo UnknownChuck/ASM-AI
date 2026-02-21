@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASM - Cortana Gen 3 Interface</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        :root {
+            --accent: #00f2ff;
+            --bg: #01080e;
+            --panel: rgba(10, 25, 41, 0.8);
+            --text: #e0faff;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', -apple-system, sans-serif;
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* --- SIDEBAR: Knowledge Base --- */
+        .sidebar {
+            width: 300px;
+            background: rgba(0, 0, 0, 0.4);
+            border-right: 1px solid rgba(0, 242, 255, 0.2);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .file-upload {
+            border: 2px dashed rgba(0, 242, 255, 0.3);
+            padding: 20px;
+            text-align: center;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: 0.3s;
+            margin-bottom: 20px;
+        }
+
+        .file-upload:hover { background: rgba(0, 242, 255, 0.1); border-color: var(--accent); }
+
+        .data-stack { flex-grow: 1; overflow-y: auto; font-size: 0.85rem; }
+        .data-item { padding: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); color: #88a; }
+
+        /* --- MAIN INTERFACE --- */
+        .main {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            position: relative;
+        }
+
+        .orb-container {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            margin-bottom: 40px;
+        }
+
+        .orb {
+            width: 100%; height: 100%;
+            background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+            border-radius: 50%;
+            box-shadow: 0 0 60px rgba(0, 242, 255, 0.3);
+            animation: pulse 4s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.6; }
+            50% { transform: scale(1.1); opacity: 1; }
+        }
+
+        /* Chat History Box */
+        #chat-window {
+            width: 100%;
+            max-width: 800px;
+            height: 300px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 20px;
+            mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+        }
+
+        .msg { margin-bottom: 15px; line-height: 1.5; }
+        .msg.ai { color: var(--accent); font-weight: 500; }
+        .msg.user { color: #fff; opacity: 0.8; text-align: right; }
+
+        /* Input Zone */
+        .input-area {
+            width: 100%;
+            max-width: 800px;
+            background: var(--panel);
+            border: 1px solid rgba(0, 242, 255, 0.3);
+            border-radius: 20px;
+            display: flex;
+            padding: 10px 20px;
+            align-items: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        input {
+            flex-grow: 1;
+            background: transparent;
+            border: none;
+            color: white;
+            padding: 15px;
+            font-size: 1.1rem;
+            outline: none;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            color: var(--accent);
+            cursor: pointer;
+            font-size: 1.2rem;
+            margin-left: 10px;
+            opacity: 0.7;
+            transition: 0.3s;
+        }
+
+        .icon-btn:hover { opacity: 1; transform: scale(1.1); }
+    </style>
+</head>
+<body>
+
+    <aside class="sidebar">
+        <h2>ASM DATA HUB</h2>
+        <div class="file-upload" onclick="document.getElementById('csv-input').click()">
+            <strong>UPLOAD DATASET</strong>
+            <p style="font-size: 0.7rem; opacity: 0.6;">Supports .CSV Spreadsheets</p>
+            <input type="file" id="csv-input" hidden accept=".csv">
+        </div>
+        <div class="data-stack" id="data-stack">
+            <div class="data-item">No active datasets loaded.</div>
+        </div>
+        <div style="font-size: 0.7rem; opacity: 0.4; margin-top: 10px;">ASM PROTOCOL V3.0</div>
+    </aside>
+
+    <main class="main">
+        <div class="orb-container">
+            <div class="orb"></div>
+        </div>
+
+        <div id="chat-window">
+            <div class="msg ai">Cortana: Link established. I'm ready to assist with your Astronomy Systems Management. You can upload a CSV to train my local memory.</div>
+        </div>
+
+        <div class="input-area">
+            <input type="text" id="user-input" placeholder="Ask ASM something or upload a file...">
+            <button class="icon-btn" id="voice-btn" title="Voice Input">🎤</button>
+            <button class="icon-btn" id="send-btn">➤</button>
+        </div>
+    </main>
+
+    <script>
+        const chatWindow = document.getElementById('chat-window');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const voiceBtn = document.getElementById('voice-btn');
+        const csvInput = document.getElementById('csv-input');
+        const dataStack = document.getElementById('data-stack');
+
+        let asmKnowledgeBase = [];
+
+        // --- 1. DATA INGESTION (Training via CSV) ---
+        csvInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            Papa.parse(file, {
+                header: true,
+                dynamicTyping: true,
+                complete: function(results) {
+                    asmKnowledgeBase = results.data;
+                    updateDataStack(file.name, results.data.length);
+                    speak(`Infection... I mean, Ingestion complete. I have indexed ${results.data.length} records from your spreadsheet.`);
+                }
+            });
+        });
+
+        function updateDataStack(name, count) {
+            dataStack.innerHTML = `<div class="data-item" style="color:var(--accent)">✔ ACTIVE: ${name}</div>`;
+            dataStack.innerHTML += `<div class="data-item">${count} rows available for query.</div>`;
+        }
+
+        // --- 2. THE BRAIN (Advanced Search & Reasoning) ---
+        function processQuery(text) {
+            addChatMessage(text, 'user');
+            const query = text.toLowerCase();
+
+            // Check the Ingested Dataset
+            if (asmKnowledgeBase.length > 0) {
+                // Advanced searching through CSV rows
+                let foundMatch = asmKnowledgeBase.find(row => {
+                    return Object.values(row).some(val => 
+                        String(val).toLowerCase().includes(query)
+                    );
+                });
+
+                if (foundMatch) {
+                    let response = "I've found a match in the ASM dataset: ";
+                    for (let [key, val] of Object.entries(foundMatch)) {
+                        response += `${key} is ${val}. `;
+                    }
+                    speak(response);
+                    return;
+                }
+            }
+
+            // Standard Logic
+            if (query.includes("status")) {
+                speak("ASM systems are nominal. Telescopes are tracking according to your last spreadsheet upload.");
+            } else if (query.includes("who are you")) {
+                speak("I am a Gen-3 ASM AI assistant, patterned after the UNSC Cortana model.");
+            } else {
+                speak("I don't have that specific data in my current matrix. Try uploading a more detailed spreadsheet.");
+            }
+        }
+
+        // --- 3. UI & OUTPUT ---
+        function addChatMessage(text, role) {
+            const div = document.createElement('div');
+            div.className = `msg ${role}`;
+            div.innerText = role === 'ai' ? `Cortana: ${text}` : `You: ${text}`;
+            chatWindow.appendChild(div);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        function speak(text) {
+            addChatMessage(text, 'ai');
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.pitch = 1.1;
+            utterance.rate = 1.05;
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // --- 4. VOICE RECOGNITION ---
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            const recognition = new SpeechRecognition();
+            recognition.onresult = (e) => {
+                const transcript = e.results[0][0].transcript;
+                processQuery(transcript);
+            };
+            voiceBtn.onclick = () => {
+                recognition.start();
+                userInput.placeholder = "Listening...";
+            };
+            recognition.onend = () => userInput.placeholder = "Ask ASM something...";
+        }
+
+        // --- 5. EVENT HANDLERS ---
+        sendBtn.onclick = () => {
+            if (userInput.value) {
+                processQuery(userInput.value);
+                userInput.value = "";
+            }
+        };
+
+        userInput.onkeypress = (e) => { if (e.key === 'Enter') sendBtn.click(); };
+
+    </script>
+</body>
+</html>
